@@ -1,0 +1,6 @@
+model:
+  feature_extractor: 'openai/whisper-small'
+  model: 'openai/whisper-small'
+
+data:
+  root: '/Users/tim/DFKI/datasets/BabyCry_augment_1'
