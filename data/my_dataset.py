@@ -19,7 +19,8 @@ class MyDataset(Dataset):
         return len(self.df)
     
     def get_specific_audio(self, x):
-        row = self.df.loc(self.df['path'] == x)
-        audio, sr = torchaudio.load(row['path'])
+        # path = self.df.loc[self.df['path'] == x].at['path']
+        # print(path)
+        audio, sr = torchaudio.load(x)
 
         return audio

@@ -1,8 +1,9 @@
 import torch
 
-import pytorch_lightning as pl
+import lightning.pytorch as pl
 import torch.nn.functional as F
 
+from torch import nn
 from transformers import WhisperFeatureExtractor, WhisperForAudioClassification
 
 class Whisper_Encoder(pl.LightningModule):
@@ -16,14 +17,18 @@ class Whisper_Encoder(pl.LightningModule):
         super().__init__()
         self.config = config
 
-        # self.feature_extractor = WhisperFeatureExtractor.from_pretrained(self.config.model.feature_extractor)
-
+        self.feature_extractor = WhisperFeatureExtractor.from_pretrained(self.config.model.feature_extractor)
         self.model1 = WhisperForAudioClassification.from_pretrained(self.config.model.model).encoder
         self.model1._freeze_parameters
         self.model2 = WhisperForAudioClassification.from_pretrained(self.config.model.model).encoder
 
+        # self.model1_layer = nn.TransformerEncoderLayer(d_model=512, nhead=8)
+        # self.model1 = nn.TransformerEncoder(self.model1_layer, num_layers=6)
+        # self.model2_layer = nn.TransformerEncoderLayer(d_model=512, nhead=8)
+        # self.model2 = nn.TransformerEncoder(self.model2_layer, num_layers=6)
+
     def configure_optimizers(self):
-        opt = torch.optim.AdamW(self.parameters, lr=1e-3)
+        opt = torch.optim.AdamW(self.model2.parameters(), lr=1e-3)
         return opt
 
     def training_step(self, batch, batch_idx):
@@ -41,4 +46,4 @@ class Whisper_Encoder(pl.LightningModule):
         return loss
     
     def forward(self, x):
-        return self.model2.forward(x)
+        return self.model2(x)

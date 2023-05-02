@@ -1,4 +1,4 @@
-from lightning import Trainer
+from lightning.pytorch import Trainer
 from omegaconf import OmegaConf
 
 from data.data_module import AugmentedDataModule
