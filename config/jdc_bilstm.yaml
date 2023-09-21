@@ -1,0 +1,20 @@
+mode: 'train'
+logger: 'wandb'
+
+model:
+  name: 'jdc'
+  pretrained: 'models/torch_models/jdc.pth'
+  num_classes: 2
+  bilstm: True
+
+data:
+  dataset: 'baby_cry'
+
+train_args:
+  batch_size: 32
+  lr: 0.0001
+  log_every_n_steps: 10
+
+wandb:
+  project: 'baby_cry'
+  offline: False

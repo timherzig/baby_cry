@@ -1,5 +1,5 @@
 # baby_cry
-PyTorch based implementation of the Infant Cry Paper. To improve train times and learn PyTorch 2.0 and PyTorch Lightning 2.0.
+PyTorch based implementation of the Infant Cry Paper. <!-- To improve train times and learn PyTorch 2.0 and PyTorch Lightning 2.0. -->
 
 
 # Installation
