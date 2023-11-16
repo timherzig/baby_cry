@@ -1,4 +1,4 @@
-from transformers import Wav2Vec2ForXVector, Wav2Vec2Config
+from transformers import Wav2Vec2ForXVector, Wav2Vec2Config, Wav2Vec2Processor
 
 
 class XLSRModel(nn.Module):
