@@ -1,3 +1,4 @@
+import torch.nn as nn
 import pytorch_lightning as pl
 
 from src.model.jdc.jdc import JDC
@@ -13,6 +14,15 @@ class Model(pl.LightningModule):
             self.base_model = TRILL(self.config)
         elif self.config.model.name == "jdc":
             self.base_model = JDC(self.config)
+
+        if config.model.bilstm.use:
+            self.bilstm = nn.LSTM(
+                input_size=config.model.bilstm.input_size,
+                hidden_size=config.model.bilstm.hidden_size,
+                num_layers=config.model.bilstm.num_layers,
+                batch_first=True,
+                bidirectional=True,
+            )
 
     def configure_optimizers(self):
         pass

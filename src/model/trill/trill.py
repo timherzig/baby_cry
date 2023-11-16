@@ -12,5 +12,7 @@ class TRILL(nn.Module):
         else:
             raise NotImplementedError
 
+        # TODO: Extend the output in a temporal domain to match the input of the potential BiLSTM
+
     def forward(self, x):
         pass

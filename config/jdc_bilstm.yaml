@@ -5,7 +5,12 @@ model:
   name: 'jdc'
   pretrained: 'models/torch_models/jdc.pth'
   num_classes: 2
-  bilstm: True
+  bilstm:
+    use: True
+    input_size: 512 #tmp
+    hidden_size: 512 #tmp
+    num_layers: 2 #tmp
+  win_size: 31
 
 data:
   dataset: 'baby_cry'
