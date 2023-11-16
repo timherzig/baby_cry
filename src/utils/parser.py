@@ -1,8 +1,15 @@
 from argparse import ArgumentParser
 
 
-def parse_arguments():
+def parse_args():
     parser = ArgumentParser()
+
+    parser.add_argument(
+        "--task",
+        type=str,
+        help="task to run",
+        default="train",
+    )
 
     parser.add_argument(
         "--config",
@@ -10,6 +17,12 @@ def parse_arguments():
         help="location of config file",
         default="config/config.yaml",
     )
-    parser.add_argument("--num_workers", type=int, help="number of workers", default=4)
+
+    parser.add_argument(
+        "--checkpoint",
+        type=str,
+        help="checkpoint to load",
+        default=None,
+    )
 
     return parser.parse_args()
