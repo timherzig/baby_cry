@@ -4,6 +4,7 @@ import random
 import torchaudio
 import numpy as np
 import pandas as pd
+import pyworld as pw
 import soundfile as sf
 
 from torch.utils.data import Dataset, DataLoader
@@ -12,7 +13,8 @@ np.random.seed(1)
 random.seed(1)
 
 SPECT_PARAMS = {"n_fft": 2048, "win_length": 1200, "hop_length": 300}
-MEL_PARAMS = {"n_mels": 80, "n_fft": 2048, "win_length": 1200, "hop_length": 300}
+# MEL_PARAMS = {"n_mels": 80, "n_fft": 2048, "win_length": 1200, "hop_length": 300}
+MEL_PARAMS = {"n_mels": 31, "n_fft": 2048, "win_length": 1200, "hop_length": 300}
 
 
 class BabyCryDatasetMelspec(Dataset):
@@ -21,17 +23,21 @@ class BabyCryDatasetMelspec(Dataset):
         self.split = split
         self.root_dir = config.data.root_dir
 
-        self.df = pd.read_csv(os.path.join(dir, self.split + ".csv"))
+        path = os.path.join(self.root_dir, self.split + ".csv")
+        self.df = pd.read_csv(path)
 
         self.sr = sr
         self.to_melspec = torchaudio.transforms.MelSpectrogram(**MEL_PARAMS)
 
         self.mean, self.std = -4, 4
         self.data_augmentation = self.config.data.augmentation and (not val_test)
-        self.max_mel_length = 192
+        self.max_mel_length = 513  # 192
         self.mean, self.std = -4, 4
 
         self.verbose = verbose
+
+        self.zero_value = -10
+        self.bad_F0 = 5
 
     def __len__(self):
         return len(self.df.index)
@@ -72,7 +78,7 @@ class BabyCryDatasetMelspec(Dataset):
 
         #######################################
         # You may want your own silence labels here
-        # The more accurate the label, the better the resultss
+        # The more accurate the label, the better the results
         is_silence = torch.zeros(f0.shape)
         is_silence[f0_zero] = 1
         #######################################
@@ -94,7 +100,7 @@ class BabyCryDatasetMelspec(Dataset):
         item = self.df.iloc[idx]
         mel_tensor, f0, is_silence = self.path_to_mel_and_label(item["path"])
         label = 1.0 if item["label"] == "G" else 0.0
-        return mel_tensor, label  # f0, is_silence, label
+        return mel_tensor, f0, is_silence, label
 
     def _load_tensor(self, data):
         wave_path = data
@@ -112,8 +118,8 @@ class Collater(object):
     def __init__(self, return_wave=False):
         self.text_pad_index = 0
         self.return_wave = return_wave
-        self.min_mel_length = 192
-        self.max_mel_length = 192
+        self.min_mel_length = 513  # 192
+        self.max_mel_length = 513  # 192
         self.mel_length_step = 16
         self.latent_dim = 16
 
@@ -122,16 +128,16 @@ class Collater(object):
         batch_size = len(batch)
         nmels = batch[0][0].size(0)
         mels = torch.zeros((batch_size, nmels, self.max_mel_length)).float()
-        # f0s = torch.zeros((batch_size, self.max_mel_length)).float()
-        # is_silences = torch.zeros((batch_size, self.max_mel_length)).float()
+        f0s = torch.zeros((batch_size, self.max_mel_length)).float()
+        is_silences = torch.zeros((batch_size, self.max_mel_length)).float()
         labels = torch.zeros(batch_size).float()
 
-        # for bid, (mel, f0, is_silence, label) in enumerate(batch):
-        for bid, (mel, label) in enumerate(batch):
+        for bid, (mel, f0, is_silence, label) in enumerate(batch):
+            # for bid, (mel, label) in enumerate(batch):
             mel_size = mel.size(1)
             mels[bid, :, :mel_size] = mel
-            # f0s[bid, :mel_size] = f0
-            # is_silences[bid, :mel_size] = is_silence
+            f0s[bid, :mel_size] = f0
+            is_silences[bid, :mel_size] = is_silence
             labels[bid] = label
 
         if self.max_mel_length > self.min_mel_length:
@@ -147,7 +153,7 @@ class Collater(object):
             f0 = f0[:, :random_slice]
 
         mels = mels.unsqueeze(1)
-        return mels, labels  # f0s, is_silences, labels
+        return mels, f0s, is_silences, labels
 
 
 def get_dataloaders(config, device, collate_config={}):
@@ -160,25 +166,25 @@ def get_dataloaders(config, device, collate_config={}):
 
         train_loader = DataLoader(
             train_dataset,
-            batch_size=config.data.batch_size,
+            batch_size=config.batch_size,
             shuffle=True,
-            num_workers=config.data.num_workers,
+            num_workers=config.num_workers,
             collate_fn=collate_fn,
             pin_memory=(device != "cpu"),
         )
         val_loader = DataLoader(
             val_dataset,
-            batch_size=config.data.batch_size,
+            batch_size=config.batch_size,
             shuffle=False,
-            num_workers=config.data.num_workers,
+            num_workers=config.num_workers,
             collate_fn=collate_fn,
             pin_memory=(device != "cpu"),
         )
         test_loader = DataLoader(
             test_dataset,
-            batch_size=config.data.batch_size,
+            batch_size=config.batch_size,
             shuffle=False,
-            num_workers=config.data.num_workers,
+            num_workers=config.num_workers,
             collate_fn=collate_fn,
             pin_memory=(device != "cpu"),
         )

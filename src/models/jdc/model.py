@@ -109,25 +109,22 @@ class JDCNet(nn.Module):
             classification_prediction, detection_prediction
             sizes: (b, 31, 722), (b, 31, 2)
         """
+        x = x.float().transpose(-1, -2)
+        seq_len = x.shape[-2]
         ###############################
         # forward pass for classifier #
         ###############################
-        x = x.float().transpose(-1, -2)
 
         convblock_out = self.conv_block(x)
 
         resblock1_out = self.res_block1(convblock_out)
         resblock2_out = self.res_block2(resblock1_out)
         resblock3_out = self.res_block3(resblock2_out)
-
-        poolblock_out = self.pool_block[0](resblock3_out)
-        poolblock_out = self.pool_block[1](poolblock_out)
-        GAN_feature = poolblock_out.transpose(-1, -2)
-        poolblock_out = self.pool_block[2](poolblock_out)
+        poolblock_out = self.pool_block(resblock3_out)
 
         # (b, 256, 31, 2) => (b, 31, 256, 2) => (b, 31, 512)
         classifier_out = (
-            poolblock_out.permute(0, 2, 1, 3).contiguous().view((-1, self.seq_len, 512))
+            poolblock_out.permute(0, 2, 1, 3).contiguous().view((-1, seq_len, 512))
         )
         classifier_out, _ = self.bilstm_classifier(
             classifier_out
@@ -136,13 +133,10 @@ class JDCNet(nn.Module):
         classifier_out = classifier_out.contiguous().view((-1, 512))  # (b * 31, 512)
         classifier_out = self.classifier(classifier_out)
         classifier_out = classifier_out.view(
-            (-1, self.seq_len, self.num_class)
+            (-1, seq_len, self.num_class)
         )  # (b, 31, num_class)
 
-        # sizes: (b, 31, 722), (b, 31, 2)
-        # classifier output consists of predicted pitch classes per frame
-        # detector output consists of: (isvoice, notvoice) estimates per frame
-        return torch.abs(classifier_out.squeeze()), GAN_feature, poolblock_out
+        return classifier_out
 
     @staticmethod
     def init_weights(m):
@@ -172,7 +166,7 @@ class ResBlock(nn.Module):
         self.pre_conv = nn.Sequential(
             nn.BatchNorm2d(num_features=in_channels),
             nn.LeakyReLU(leaky_relu_slope, inplace=True),
-            nn.MaxPool2d(kernel_size=(1, 2)),  # apply downsampling on the y axis only
+            nn.MaxPool2d(kernel_size=(1, 4)),  # apply downsampling on the y axis only
         )
 
         # conv layers

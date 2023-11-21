@@ -34,7 +34,7 @@ def train(config, config_name):
         f"Training data: {config.data.root_dir} ver. {config.data.version}, data type {config.data.data_type}."
     )
 
-    num_epochs = config.train.num_epochs
+    num_epochs = config.num_epochs
     train_loss_per_epoch = torch.zeros(num_epochs)
     val_loss_per_epoch = torch.zeros(num_epochs)
     best_val_loss = float("inf")
@@ -43,7 +43,7 @@ def train(config, config_name):
     time_name = time_name.replace(" ", "_")
     time_name = time_name.replace(":", "_")
 
-    path = f"./trained_models/{config.data.name}_{config.data.version}/{config.model.architecture}/{config_name}"
+    path = f"./trained_models/{config.data.root_dir.split('/')[-1].split('.')[0]}_{config.data.version}/{config.model.architecture}/{config_name}"
 
     if os.path.exists(path):
         shutil.rmtree(path, ignore_errors=True)
@@ -73,14 +73,14 @@ def train(config, config_name):
 
         for batch in tqdm(train_loader):
             train_counter += 1
-            samples, labels = batch
+            samples, _, _, labels = batch
             samples = samples.to(device)
             labels = labels.to(device)
 
             optimizer.zero_grad()
 
             if loss_type == "binary_cross_entropy":
-                output = Net(samples)
+                output = Net(samples.transpose(-1, -2))
                 loss = F.binary_cross_entropy(output, labels)
             else:
                 raise NotImplementedError(f"Loss type {loss_type} not implemented.")
@@ -95,13 +95,23 @@ def train(config, config_name):
         val_counter = 0
         for batch in tqdm(val_loader):
             val_counter += 1
-            samples, labels = batch
+            samples, _, _, labels = batch
             samples = samples.to(device)
             labels = labels.to(device)
 
             if loss_type == "binary_cross_entropy":
-                output = Net(samples)
+                output = Net(samples.transpose(-1, -2))
                 loss = F.binary_cross_entropy(output, labels)
+
+                if total_val_loss == 0:
+                    print(f"Example Validation Results:")
+                    print(f"Output: {torch.round(output)}")
+                    print("--------------------")
+                    print(f"Labels: {labels}")
+                    print("--------------------")
+                    print("Difference:                 (optimally all 0s)")
+                    print(torch.round(output) - labels)
+                    print("--------------------")
             else:
                 raise NotImplementedError(f"Loss type {loss_type} not implemented.")
 
@@ -110,7 +120,7 @@ def train(config, config_name):
         val_loss_per_epoch[epoch] = total_val_loss / val_counter
         if val_loss_per_epoch[epoch] < best_val_loss:
             best_val_loss = val_loss_per_epoch[epoch]
-            net_str = f"{config.model.architecture}_{epoch}_train-loss_{train_loss_per_epoch[epoch]}_val-loss_{val_loss_per_epoch[epoch]}.pth"
+            net_str = f"{config.model.architecture}_epoch_{epoch}_train-loss_{train_loss_per_epoch[epoch]:.4f}_val-loss_{val_loss_per_epoch[epoch]:.4f}.pth"
             torch.save(
                 {
                     "epoch": epoch,
@@ -125,14 +135,12 @@ def train(config, config_name):
 
         elapsed = time.time() - t
 
-        print_str = (
-            f"Epoch {epoch}/{num_epochs} | Train loss: {train_loss_per_epoch[epoch]:.4f} | Val loss: {val_loss_per_epoch[epoch]:.4f} | Time: {elapsed:.2f} s"
-        )
+        print_str = f"Epoch {epoch}/{num_epochs} | Train loss: {train_loss_per_epoch[epoch]:.4f} | Val loss: {val_loss_per_epoch[epoch]:.4f} | Time: {elapsed:.2f} s"
         print(print_str)
 
         df = pd.DataFrame([print_str])
         df.to_csv(
-            f"{log_path}/{time_name}.csv"
+            f"{log_path}/{time_name}.csv",
             sep=" ",
             mode="a",
             header=False,
