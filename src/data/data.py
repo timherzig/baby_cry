@@ -13,8 +13,7 @@ np.random.seed(1)
 random.seed(1)
 
 SPECT_PARAMS = {"n_fft": 2048, "win_length": 1200, "hop_length": 300}
-# MEL_PARAMS = {"n_mels": 80, "n_fft": 2048, "win_length": 1200, "hop_length": 300}
-MEL_PARAMS = {"n_mels": 31, "n_fft": 2048, "win_length": 1200, "hop_length": 300}
+MEL_PARAMS = {"n_mels": 80, "n_fft": 2048, "win_length": 1200, "hop_length": 300}
 
 
 class BabyCryDatasetMelspec(Dataset):
@@ -31,7 +30,7 @@ class BabyCryDatasetMelspec(Dataset):
 
         self.mean, self.std = -4, 4
         self.data_augmentation = self.config.data.augmentation and (not val_test)
-        self.max_mel_length = 513  # 192
+        self.max_mel_length = 192  # 513  # 192
         self.mean, self.std = -4, 4
 
         self.verbose = verbose
@@ -108,6 +107,12 @@ class BabyCryDatasetMelspec(Dataset):
         wave_tensor = torch.from_numpy(wave).float()
         return wave_tensor
 
+    def get_split(self):
+        pos = len(self.df[self.df["label"] == "G"])
+        neg = len(self.df[self.df["label"] == "J"])
+
+        return [neg / (pos + neg), pos / (pos + neg)]
+
 
 class Collater(object):
     """
@@ -118,8 +123,8 @@ class Collater(object):
     def __init__(self, return_wave=False):
         self.text_pad_index = 0
         self.return_wave = return_wave
-        self.min_mel_length = 513  # 192
-        self.max_mel_length = 513  # 192
+        self.min_mel_length = 192  # 513  # 192
+        self.max_mel_length = 192  # 513  # 192
         self.mel_length_step = 16
         self.latent_dim = 16
 
@@ -191,4 +196,6 @@ def get_dataloaders(config, device, collate_config={}):
     else:
         raise NotImplementedError(f"Data type {config.data.data_type} not implemented.")
 
-    return train_loader, val_loader, test_loader
+    split = train_dataset.get_split()
+
+    return train_loader, val_loader, test_loader, split

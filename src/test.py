@@ -22,7 +22,7 @@ def test(config, checkpoint):
             samples = samples.to(device)
             labels = labels.to(device)
 
-            predictions = Net(samples.transpose(-1, -2))
+            predictions = Net(samples)
             predictions = predictions.cpu().numpy()
             labels = labels.cpu().numpy()
 

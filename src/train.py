@@ -5,19 +5,24 @@ import shutil
 import pandas as pd
 import torch.optim as optim
 import torch.nn.functional as F
+import matplotlib.pyplot as plt
 
 from tqdm import tqdm
+from omegaconf import OmegaConf
+from sklearn.metrics import f1_score, accuracy_score
 from src.data.data import get_dataloaders
 from src.models.model import get_model
 
 
 def train(config, config_name):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
 
     if not os.path.exists("./trained_models/"):
         os.makedirs("./trained_models/")
 
-    train_loader, val_loader, test_loader = get_dataloaders(config, device)
+    train_loader, val_loader, test_loader, split = get_dataloaders(config, device)
+    print(f"Train class weights: {split}")
 
     Net = get_model(config).to(device)
 
@@ -37,6 +42,8 @@ def train(config, config_name):
     num_epochs = config.num_epochs
     train_loss_per_epoch = torch.zeros(num_epochs)
     val_loss_per_epoch = torch.zeros(num_epochs)
+    val_f1_per_epoch = torch.zeros(num_epochs)
+    val_acc_per_epoch = torch.zeros(num_epochs)
     best_val_loss = float("inf")
 
     time_name = time.ctime()
@@ -60,6 +67,8 @@ def train(config, config_name):
     if not os.path.exists(save_path):
         os.makedirs(save_path)
 
+    OmegaConf.save(config, f"{path}/config.yaml")
+
     f = open(f"{log_path}/{time_name}.csv", "w+")
 
     print("Training started...")
@@ -76,12 +85,11 @@ def train(config, config_name):
             samples, _, _, labels = batch
             samples = samples.to(device)
             labels = labels.to(device)
-
             optimizer.zero_grad()
 
             if loss_type == "binary_cross_entropy":
-                output = Net(samples.transpose(-1, -2))
-                loss = F.binary_cross_entropy(output, labels)
+                output = Net(samples)
+                loss = F.binary_cross_entropy(output, labels)  # TODO: add class weights
             else:
                 raise NotImplementedError(f"Loss type {loss_type} not implemented.")
 
@@ -92,6 +100,8 @@ def train(config, config_name):
         train_loss_per_epoch[epoch] = total_train_loss / train_counter
 
         total_val_loss = 0
+        total_f1_counter = 0
+        total_acc_counter = 0
         val_counter = 0
         for batch in tqdm(val_loader):
             val_counter += 1
@@ -100,24 +110,24 @@ def train(config, config_name):
             labels = labels.to(device)
 
             if loss_type == "binary_cross_entropy":
-                output = Net(samples.transpose(-1, -2))
+                output = Net(samples)
                 loss = F.binary_cross_entropy(output, labels)
-
-                if total_val_loss == 0:
-                    print(f"Example Validation Results:")
-                    print(f"Output: {torch.round(output)}")
-                    print("--------------------")
-                    print(f"Labels: {labels}")
-                    print("--------------------")
-                    print("Difference:                 (optimally all 0s)")
-                    print(torch.round(output) - labels)
-                    print("--------------------")
+                print(f"max value output {torch.max(output)}")
+                o = (output > 0.5).float()
+                o = o.clone().cpu().detach().numpy()
+                l = labels.clone().cpu().detach().numpy()
+                f1 = f1_score(l, o)
+                acc = accuracy_score(l, o)
             else:
                 raise NotImplementedError(f"Loss type {loss_type} not implemented.")
 
             total_val_loss += loss.item()
+            total_f1_counter += f1
+            total_acc_counter += acc
 
         val_loss_per_epoch[epoch] = total_val_loss / val_counter
+        val_f1_per_epoch[epoch] = total_f1_counter / val_counter
+        val_acc_per_epoch[epoch] = total_acc_counter / val_counter
         if val_loss_per_epoch[epoch] < best_val_loss:
             best_val_loss = val_loss_per_epoch[epoch]
             net_str = f"{config.model.architecture}_epoch_{epoch}_train-loss_{train_loss_per_epoch[epoch]:.4f}_val-loss_{val_loss_per_epoch[epoch]:.4f}.pth"
@@ -135,7 +145,7 @@ def train(config, config_name):
 
         elapsed = time.time() - t
 
-        print_str = f"Epoch {epoch}/{num_epochs} | Train loss: {train_loss_per_epoch[epoch]:.4f} | Val loss: {val_loss_per_epoch[epoch]:.4f} | Time: {elapsed:.2f} s"
+        print_str = f"Epoch {epoch+1}/{num_epochs} | Train loss: {train_loss_per_epoch[epoch]:.4f} | Val loss: {val_loss_per_epoch[epoch]:.4f} | Val f1: {val_f1_per_epoch[epoch]:.4f} | Val acc: {val_acc_per_epoch[epoch]:.4f} | Time: {elapsed:.2f} s"
         print(print_str)
 
         df = pd.DataFrame([print_str])
@@ -148,6 +158,11 @@ def train(config, config_name):
         )
 
         scheduler.step()
+
+    plt.plot(train_loss_per_epoch, label="train")
+    plt.plot(val_loss_per_epoch, label="val")
+    plt.legend()
+    plt.savefig(f"{log_path}/train_plot.png")
 
     f.close()
 
