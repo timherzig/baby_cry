@@ -9,12 +9,14 @@ model:
   pretrained: "src/models/jdc/bst.t7"
   num_classes: 1
   seq_len: 192
+  classifier: "bilstm"
   bilstm:
     hidden_size: 128
     num_layers: 8
     dropout: 0.2
 
-batch_size: 256
+batch_size: 64
 num_workers: 8
-num_epochs: 30
-lr: 0.01
+num_epochs: 100
+lr: 0.001
+loss: "bce"

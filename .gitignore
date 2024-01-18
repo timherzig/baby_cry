@@ -1,5 +1,7 @@
 slurm/
 trained_models/
+notebooks/
+figs/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

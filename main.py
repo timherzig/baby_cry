@@ -16,6 +16,10 @@ if __name__ == "__main__":
 
         test(config)
 
+    elif args.task == "pitch_distribution":
+        from src.stats.pitch_distribution import pitch_distribution
+
+        pitch_distribution(config)
     else:
         raise NotImplementedError(f"Task {args.task} not implemented")
 

@@ -1,4 +1,5 @@
 import os
+import math
 import torch
 import random
 import torchaudio
@@ -82,23 +83,54 @@ class BabyCryDatasetMelspec(Dataset):
         is_silence[f0_zero] = 1
         #######################################
 
-        if mel_length > self.max_mel_length:
-            random_start = np.random.randint(0, mel_length - self.max_mel_length)
-            mel_tensor = mel_tensor[
-                :, random_start : random_start + self.max_mel_length
+        mel_concat = torch.zeros(
+            (
+                math.ceil(mel_length / self.max_mel_length),
+                mel_tensor.size(0),
+                self.max_mel_length,
+            )
+        )
+        f0_concat = torch.zeros(
+            (math.ceil(mel_length / self.max_mel_length), self.max_mel_length)
+        )
+        is_silence_concat = torch.zeros(
+            (
+                math.ceil(mel_length / self.max_mel_length),
+                self.max_mel_length,
+            )
+        )
+
+        for i in range(math.ceil(mel_length / self.max_mel_length)):
+            start_point = i * self.max_mel_length
+            end_point = (i + 1) * self.max_mel_length
+            if end_point > mel_length:
+                end_point = mel_length
+
+            mel_concat[i, :, : end_point - start_point] = mel_tensor[
+                :, start_point:end_point
             ]
-            f0 = f0[random_start : random_start + self.max_mel_length]
-            is_silence = is_silence[random_start : random_start + self.max_mel_length]
+            f0_concat[i, : end_point - start_point] = f0[start_point:end_point]
+            is_silence_concat[i, : end_point - start_point] = is_silence[
+                start_point:end_point
+            ]
+
+        # if mel_length > self.max_mel_length:
+        #     random_start = np.random.randint(0, mel_length - self.max_mel_length)
+        #     mel_tensor = mel_tensor[
+        #         :, random_start : random_start + self.max_mel_length
+        #     ]
+        #     f0 = f0[random_start : random_start + self.max_mel_length]
+        #     is_silence = is_silence[random_start : random_start + self.max_mel_length]
 
         if torch.any(torch.isnan(f0)):  # failed
             f0[torch.isnan(f0)] = self.zero_value  # replace nan value with 0
 
-        return mel_tensor, f0, is_silence
+        return mel_concat, f0_concat, is_silence_concat  # mel_tensor, f0, is_silence
 
     def __getitem__(self, idx):
         item = self.df.iloc[idx]
         mel_tensor, f0, is_silence = self.path_to_mel_and_label(item["path"])
-        label = 1.0 if item["label"] == "G" else 0.0
+        label = [1.0, 0.0] if item["label"] == "G" else [0.0, 1.0]
         return mel_tensor, f0, is_silence, label
 
     def _load_tensor(self, data):
@@ -108,10 +140,10 @@ class BabyCryDatasetMelspec(Dataset):
         return wave_tensor
 
     def get_split(self):
-        pos = len(self.df[self.df["label"] == "G"])
-        neg = len(self.df[self.df["label"] == "J"])
+        neg = len(self.df[self.df["label"] == "G"])
+        pos = len(self.df[self.df["label"] == "J"])
 
-        return [neg / (pos + neg), pos / (pos + neg)]
+        return [neg / (pos + neg), pos / (pos + neg)]  # [percent of J, percent of G]
 
 
 class Collater(object):
@@ -131,33 +163,31 @@ class Collater(object):
     def __call__(self, batch):
         # batch[0] = wave, mel, text, f0, speakerid
         batch_size = len(batch)
-        nmels = batch[0][0].size(0)
-        mels = torch.zeros((batch_size, nmels, self.max_mel_length)).float()
-        f0s = torch.zeros((batch_size, self.max_mel_length)).float()
-        is_silences = torch.zeros((batch_size, self.max_mel_length)).float()
-        labels = torch.zeros(batch_size).float()
+        # nmels = batch[0][0].size(0)
+        nmels = max([x[0].size(0) for x in batch])
+        mels = torch.zeros(
+            (batch_size, nmels, MEL_PARAMS["n_mels"], self.max_mel_length)
+        ).float()
+        f0s = torch.zeros((batch_size, nmels, self.max_mel_length)).float()
+        is_silences = torch.zeros((batch_size, nmels, self.max_mel_length)).float()
+        labels = torch.zeros((batch_size, 2)).float()
 
         for bid, (mel, f0, is_silence, label) in enumerate(batch):
             # for bid, (mel, label) in enumerate(batch):
-            mel_size = mel.size(1)
-            mels[bid, :, :mel_size] = mel
-            f0s[bid, :mel_size] = f0
-            is_silences[bid, :mel_size] = is_silence
-            labels[bid] = label
+            # mel_size = mel.size(1)
+            # mels[bid, :, :mel_size] = mel
+            # f0s[bid, :mel_size] = f0
+            # is_silences[bid, :mel_size] = is_silence
 
-        if self.max_mel_length > self.min_mel_length:
-            random_slice = (
-                np.random.randint(
-                    self.min_mel_length // self.mel_length_step,
-                    1 + self.max_mel_length // self.mel_length_step,
-                )
-                * self.mel_length_step
-                + self.min_mel_length
-            )
-            mels = mels[:, :, :random_slice]
-            f0 = f0[:, :random_slice]
+            mel_size = mel.size(0)
+            mels[bid, :mel_size, :, :] = mel
+            f0s[bid, :mel_size, :] = f0
+            is_silences[bid, :mel_size, :] = is_silence
 
-        mels = mels.unsqueeze(1)
+            labels[bid][0] = label[0]
+            labels[bid][1] = label[1]
+
+        # mels = mels.unsqueeze(1)
         return mels, f0s, is_silences, labels
 
 

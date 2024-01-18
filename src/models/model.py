@@ -27,29 +27,46 @@ class BabyCryNet(nn.Module):
                 f"Model architecture {self.architecture} not implemented."
             )
 
-        # TODO: add classifier head (RNN/GNU/BI-LSTM)
-        self.lstm_classifier = nn.LSTM(
-            input_size=2,
-            hidden_size=config.model.bilstm.hidden_size,
-            batch_first=True,
-            bidirectional=True,
-        )
-        self.fc = nn.Linear(config.model.bilstm.hidden_size * 2, 1)
+        if self.config.model.classifier == "bilstm":
+            # TODO: add classifier head (RNN/GNU/BI-LSTM)
+            self.lstm_classifier = nn.LSTM(
+                input_size=2,
+                hidden_size=config.model.bilstm.hidden_size,
+                batch_first=True,
+                bidirectional=True,
+            )
+            self.fc = nn.Linear(config.model.bilstm.hidden_size * 2, 2)
+
+        self.softmax = nn.Softmax(dim=1)
 
     def forward(self, x):
-        # (b, 1, 192, 80) -> (b, 192) (Pitch sequence prediction/estimation)
-        pitch_prediction, _, _ = self.base_model(x)
+        # (b, nmels, 192, 80) -> (b, nmels, 192) (Pitch sequence prediction/estimation)
+        pitch_prediction = torch.zeros(
+            (x.shape[0], x.shape[1], self.config.model.seq_len)
+        ).to(x.device)
+        for i in range(x.shape[1]):
+            pitch, _, _ = self.base_model(x[:, i, :, :].unsqueeze(1))
+            pitch_prediction[:, i, :] = pitch
 
-        # (b, 192) -> (b, 192, 2) (Delta features)
-        delta = pitch_prediction[:, 1:] - pitch_prediction[:, :-1]
-        delta = torch.cat([torch.zeros_like(delta[:, :1]), delta], dim=1)
-        pitch_prediction = torch.stack([pitch_prediction, delta], dim=2)
+        pitch_prediction /= (
+            300  # normalize pitch (found 300 to be roughly the max pitch value)
+        )
 
-        # (b, 192, 2) -> (b)  (Binary classification)
-        classifier_prediction, _ = self.lstm_classifier(pitch_prediction)
-        classifier_prediction = classifier_prediction[:, -1, :]
-        classifier_prediction = self.fc(classifier_prediction).squeeze(1)
-        classifier_prediction = torch.sigmoid(classifier_prediction)
+        # (b, nmels, 192) -> (b, 2, nmels, 192) (Delta features)
+        delta = pitch_prediction[:, :, 1:] - pitch_prediction[:, :, :-1]
+        delta = torch.cat([torch.zeros_like(delta[:, :, :1]), delta], dim=2)
+        pitch_prediction = torch.stack([pitch_prediction, delta], dim=1)
+
+        # (b, 2, nmels, 192) -> (b, nmels, 2, 192) -> (b, nmels * 192, 2)
+        pitch_prediction = pitch_prediction.flatten(start_dim=2, end_dim=3)
+        pitch_prediction = pitch_prediction.transpose(1, 2)
+
+        # (b, nmels * 192, 2) -> (b, 2)  (Binary classification)
+        if self.config.model.classifier == "bilstm":
+            classifier_prediction, _ = self.lstm_classifier(pitch_prediction)
+            classifier_prediction = classifier_prediction[:, -1, :]
+            classifier_prediction = self.fc(classifier_prediction)
+            classifier_prediction = self.softmax(classifier_prediction)
 
         return classifier_prediction
 

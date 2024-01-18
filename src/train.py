@@ -3,6 +3,7 @@ import time
 import torch
 import shutil
 import pandas as pd
+import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
@@ -22,7 +23,8 @@ def train(config, config_name):
         os.makedirs("./trained_models/")
 
     train_loader, val_loader, test_loader, split = get_dataloaders(config, device)
-    print(f"Train class weights: {split}")
+    split = torch.tensor(split).to(device)
+    print(f"Split: {split}")
 
     Net = get_model(config).to(device)
 
@@ -33,7 +35,11 @@ def train(config, config_name):
 
     optimizer = optim.Adam(Net.parameters(), lr=config.lr)
     scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.95)
-    loss_type = "binary_cross_entropy"  # {binary_cross_entropy}
+
+    if config.loss == "bce":
+        criterion = nn.BCELoss()
+    elif config.loss == "wbce":
+        criterion = nn.BCEWithLogitsLoss(pos_weight=split)
 
     print(
         f"Training data: {config.data.root_dir} ver. {config.data.version}, data type {config.data.data_type}."
@@ -41,6 +47,8 @@ def train(config, config_name):
 
     num_epochs = config.num_epochs
     train_loss_per_epoch = torch.zeros(num_epochs)
+    train_f1_per_epoch = torch.zeros(num_epochs)
+    train_acc_per_epoch = torch.zeros(num_epochs)
     val_loss_per_epoch = torch.zeros(num_epochs)
     val_f1_per_epoch = torch.zeros(num_epochs)
     val_acc_per_epoch = torch.zeros(num_epochs)
@@ -80,6 +88,8 @@ def train(config, config_name):
         total_train_loss = 0
         train_counter = 0
 
+        total_f1_counter = 0
+        total_acc_counter = 0
         for batch in tqdm(train_loader):
             train_counter += 1
             samples, _, _, labels = batch
@@ -87,16 +97,25 @@ def train(config, config_name):
             labels = labels.to(device)
             optimizer.zero_grad()
 
-            if loss_type == "binary_cross_entropy":
-                output = Net(samples)
-                loss = F.binary_cross_entropy(output, labels)  # TODO: add class weights
-            else:
-                raise NotImplementedError(f"Loss type {loss_type} not implemented.")
+            output = Net(samples)
+
+            loss = criterion(output, labels)
 
             loss.backward()
             optimizer.step()
+
+            o = (output > 0.5).float()
+            o = o.clone().cpu().detach().numpy()
+            l = labels.clone().cpu().detach().numpy()
+            f1 = f1_score(l, o, average="macro")
+            acc = accuracy_score(l, o)
+
+            total_f1_counter += f1
+            total_acc_counter += acc
             total_train_loss += loss.item()
 
+        train_f1_per_epoch[epoch] = total_f1_counter / train_counter
+        train_acc_per_epoch[epoch] = total_acc_counter / train_counter
         train_loss_per_epoch[epoch] = total_train_loss / train_counter
 
         total_val_loss = 0
@@ -109,17 +128,18 @@ def train(config, config_name):
             samples = samples.to(device)
             labels = labels.to(device)
 
-            if loss_type == "binary_cross_entropy":
-                output = Net(samples)
-                loss = F.binary_cross_entropy(output, labels)
-                print(f"max value output {torch.max(output)}")
-                o = (output > 0.5).float()
-                o = o.clone().cpu().detach().numpy()
-                l = labels.clone().cpu().detach().numpy()
-                f1 = f1_score(l, o)
-                acc = accuracy_score(l, o)
-            else:
-                raise NotImplementedError(f"Loss type {loss_type} not implemented.")
+            output = Net(samples)
+
+            random_idx = torch.randint(0, output.shape[0], (5,))
+            print(f"Output: {output[random_idx]}, Labels: {labels[random_idx]}")
+
+            loss = criterion(output, labels)
+
+            o = (output > 0.5).float()
+            o = o.clone().cpu().detach().numpy()
+            l = labels.clone().cpu().detach().numpy()
+            f1 = f1_score(l, o, average="macro")
+            acc = accuracy_score(l, o)
 
             total_val_loss += loss.item()
             total_f1_counter += f1
@@ -145,7 +165,7 @@ def train(config, config_name):
 
         elapsed = time.time() - t
 
-        print_str = f"Epoch {epoch+1}/{num_epochs} | Train loss: {train_loss_per_epoch[epoch]:.4f} | Val loss: {val_loss_per_epoch[epoch]:.4f} | Val f1: {val_f1_per_epoch[epoch]:.4f} | Val acc: {val_acc_per_epoch[epoch]:.4f} | Time: {elapsed:.2f} s"
+        print_str = f"Epoch {epoch+1}/{num_epochs} | Train loss: {train_loss_per_epoch[epoch]:.4f} | Train f1: {train_f1_per_epoch[epoch]:.4f} | Train acc: {train_acc_per_epoch[epoch]:.4f} | Val loss: {val_loss_per_epoch[epoch]:.4f} | Val f1: {val_f1_per_epoch[epoch]:.4f} | Val acc: {val_acc_per_epoch[epoch]:.4f} | Time: {elapsed:.2f} s"
         print(print_str)
 
         df = pd.DataFrame([print_str])
