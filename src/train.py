@@ -4,6 +4,7 @@ import torch
 import shutil
 import pandas as pd
 import torch.nn as nn
+import numpy as np
 import torch.optim as optim
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
@@ -35,11 +36,6 @@ def train(config, config_name):
 
     optimizer = optim.Adam(Net.parameters(), lr=config.lr)
     scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.95)
-
-    if config.loss == "bce":
-        criterion = nn.BCELoss()
-    elif config.loss == "wbce":
-        criterion = nn.BCEWithLogitsLoss(pos_weight=split)
 
     print(
         f"Training data: {config.data.root_dir} ver. {config.data.version}, data type {config.data.data_type}."
@@ -99,14 +95,17 @@ def train(config, config_name):
 
             output = Net(samples)
 
-            loss = criterion(output, labels)
+            # loss = criterion(output, labels)
+            loss = F.cross_entropy(output, labels.long(), weight=split)
 
             loss.backward()
             optimizer.step()
 
+            output = F.softmax(output, dim=1)
+
             o = (output > 0.5).float()
             o = o.clone().cpu().detach().numpy()
-            l = labels.clone().cpu().detach().numpy()
+            l = np.eye(2)[labels.clone().cpu().detach().numpy().astype(int)]
             f1 = f1_score(l, o, average="macro")
             acc = accuracy_score(l, o)
 
@@ -131,13 +130,18 @@ def train(config, config_name):
             output = Net(samples)
 
             random_idx = torch.randint(0, output.shape[0], (5,))
-            print(f"Output: {output[random_idx]}, Labels: {labels[random_idx]}")
 
-            loss = criterion(output, labels)
+            loss = F.cross_entropy(output, labels.long(), weight=split)
+
+            output = F.softmax(output, dim=1)
+            # for i in range(len(random_idx)):
+            #     print(
+            #         f"Output: {output[random_idx[i]].cpu().detach().numpy()}, Label: {labels[random_idx[i]].cpu().detach().numpy()}"
+            #     )
 
             o = (output > 0.5).float()
             o = o.clone().cpu().detach().numpy()
-            l = labels.clone().cpu().detach().numpy()
+            l = np.eye(2)[labels.clone().cpu().detach().numpy().astype(int)]
             f1 = f1_score(l, o, average="macro")
             acc = accuracy_score(l, o)
 
@@ -179,10 +183,65 @@ def train(config, config_name):
 
         scheduler.step()
 
+    # Load best model
+    params = torch.load(best_model_save_path, map_location="cpu")
+    Net.load_state_dict(params["model_state_dict"])
+    Net.eval()
+
+    total_test_loss = 0
+    total_f1_counter = 0
+    total_acc_counter = 0
+    for batch in tqdm(test_loader):
+        samples, _, _, labels = batch
+        samples = samples.to(device)
+        labels = labels.to(device)
+
+        output = Net(samples)
+
+        random_idx = torch.randint(0, output.shape[0], (5,))
+
+        output = F.softmax(output, dim=1)
+        for i in range(len(random_idx)):
+            print(
+                f"Output: {output[random_idx[i]].cpu().detach().numpy()}, Label: {labels[random_idx[i]].cpu().detach().numpy()}"
+            )
+
+        o = (output > 0.5).float()
+        o = o.clone().cpu().detach().numpy()
+        l = np.eye(2)[labels.clone().cpu().detach().numpy().astype(int)]
+        f1 = f1_score(l, o, average="macro")
+        acc = accuracy_score(l, o)
+
+        total_f1_counter += f1
+        total_acc_counter += acc
+
+    print_str = f"Final Test Results on the highest validation scoring model: F1: {total_f1_counter / len(test_loader):.4f} | Acc: {total_acc_counter / len(test_loader):.4f}\nBest model saved at: {best_model_save_path}"
+    print(print_str)
+
+    df = pd.DataFrame([print_str])
+    df.to_csv(
+        f"{log_path}/{time_name}.csv",
+        sep=" ",
+        mode="a",
+        header=False,
+        index=False,
+    )
+
     plt.plot(train_loss_per_epoch, label="train")
     plt.plot(val_loss_per_epoch, label="val")
     plt.legend()
     plt.savefig(f"{log_path}/train_plot.png")
+    plt.clf()
+    plt.plot(train_f1_per_epoch, label="train")
+    plt.plot(val_f1_per_epoch, label="val")
+    plt.legend()
+    plt.savefig(f"{log_path}/train_f1_plot.png")
+    plt.clf()
+    plt.plot(train_acc_per_epoch, label="train")
+    plt.plot(val_acc_per_epoch, label="val")
+    plt.legend()
+    plt.savefig(f"{log_path}/train_acc_plot.png")
+    plt.clf()
 
     f.close()
 

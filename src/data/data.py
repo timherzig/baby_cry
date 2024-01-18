@@ -130,7 +130,7 @@ class BabyCryDatasetMelspec(Dataset):
     def __getitem__(self, idx):
         item = self.df.iloc[idx]
         mel_tensor, f0, is_silence = self.path_to_mel_and_label(item["path"])
-        label = [1.0, 0.0] if item["label"] == "G" else [0.0, 1.0]
+        label = 0 if item["label"] == "G" else 1
         return mel_tensor, f0, is_silence, label
 
     def _load_tensor(self, data):
@@ -143,7 +143,8 @@ class BabyCryDatasetMelspec(Dataset):
         neg = len(self.df[self.df["label"] == "G"])
         pos = len(self.df[self.df["label"] == "J"])
 
-        return [neg / (pos + neg), pos / (pos + neg)]  # [percent of J, percent of G]
+        # return [0.7, 0.3]
+        return [pos / (pos + neg), neg / (pos + neg)]  # [percent of J, percent of G]
 
 
 class Collater(object):
@@ -155,39 +156,30 @@ class Collater(object):
     def __init__(self, return_wave=False):
         self.text_pad_index = 0
         self.return_wave = return_wave
-        self.min_mel_length = 192  # 513  # 192
-        self.max_mel_length = 192  # 513  # 192
+        self.min_mel_length = 192
+        self.max_mel_length = 192
         self.mel_length_step = 16
         self.latent_dim = 16
 
     def __call__(self, batch):
         # batch[0] = wave, mel, text, f0, speakerid
         batch_size = len(batch)
-        # nmels = batch[0][0].size(0)
         nmels = max([x[0].size(0) for x in batch])
         mels = torch.zeros(
             (batch_size, nmels, MEL_PARAMS["n_mels"], self.max_mel_length)
         ).float()
         f0s = torch.zeros((batch_size, nmels, self.max_mel_length)).float()
         is_silences = torch.zeros((batch_size, nmels, self.max_mel_length)).float()
-        labels = torch.zeros((batch_size, 2)).float()
+        labels = torch.zeros((batch_size)).float()
 
         for bid, (mel, f0, is_silence, label) in enumerate(batch):
-            # for bid, (mel, label) in enumerate(batch):
-            # mel_size = mel.size(1)
-            # mels[bid, :, :mel_size] = mel
-            # f0s[bid, :mel_size] = f0
-            # is_silences[bid, :mel_size] = is_silence
-
             mel_size = mel.size(0)
             mels[bid, :mel_size, :, :] = mel
             f0s[bid, :mel_size, :] = f0
             is_silences[bid, :mel_size, :] = is_silence
 
-            labels[bid][0] = label[0]
-            labels[bid][1] = label[1]
+            labels[bid] = label
 
-        # mels = mels.unsqueeze(1)
         return mels, f0s, is_silences, labels
 
 

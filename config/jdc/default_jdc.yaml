@@ -1,5 +1,5 @@
 data:
-  root_dir: "/netscratch/herzig/datasets/BabyCry_augment_1"
+  root_dir: "/netscratch/herzig/datasets/BabyCry_no_augment"
   version: 1
   data_type: "mel-spectogram"
   augmentation: False
@@ -9,14 +9,12 @@ model:
   pretrained: "src/models/jdc/bst.t7"
   num_classes: 1
   seq_len: 192
-  classifier: "bilstm"
   bilstm:
-    hidden_size: 128
-    num_layers: 8
-    dropout: 0.2
+    hidden_size: 64
+    num_layers: 4
+    dropout: 0.5
 
-batch_size: 64
+batch_size: 8
 num_workers: 8
-num_epochs: 100
-lr: 0.001
-loss: "bce"
+num_epochs: 20
+lr: 0.0001

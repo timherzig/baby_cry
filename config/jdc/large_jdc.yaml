@@ -10,8 +10,8 @@ model:
   num_classes: 1
   seq_len: 192
   bilstm:
-    hidden_size: 64
-    num_layers: 2
+    hidden_size: 128
+    num_layers: 8
     dropout: 0.5
 
 batch_size: 8

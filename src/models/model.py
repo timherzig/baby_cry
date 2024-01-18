@@ -27,17 +27,20 @@ class BabyCryNet(nn.Module):
                 f"Model architecture {self.architecture} not implemented."
             )
 
-        if self.config.model.classifier == "bilstm":
-            # TODO: add classifier head (RNN/GNU/BI-LSTM)
-            self.lstm_classifier = nn.LSTM(
-                input_size=2,
-                hidden_size=config.model.bilstm.hidden_size,
-                batch_first=True,
-                bidirectional=True,
-            )
-            self.fc = nn.Linear(config.model.bilstm.hidden_size * 2, 2)
+        self.lstm_classifier = nn.LSTM(
+            input_size=2,
+            num_layers=config.model.bilstm.num_layers,
+            hidden_size=config.model.bilstm.hidden_size,
+            batch_first=True,
+            bidirectional=True,
+        )
+        self.fc = nn.Linear(
+            config.model.bilstm.hidden_size * 2 * config.model.bilstm.num_layers,
+            2,
+            bias=False,
+        )
 
-        self.softmax = nn.Softmax(dim=1)
+        # self.softmax = nn.Softmax(dim=1)
 
     def forward(self, x):
         # (b, nmels, 192, 80) -> (b, nmels, 192) (Pitch sequence prediction/estimation)
@@ -62,11 +65,11 @@ class BabyCryNet(nn.Module):
         pitch_prediction = pitch_prediction.transpose(1, 2)
 
         # (b, nmels * 192, 2) -> (b, 2)  (Binary classification)
-        if self.config.model.classifier == "bilstm":
-            classifier_prediction, _ = self.lstm_classifier(pitch_prediction)
-            classifier_prediction = classifier_prediction[:, -1, :]
-            classifier_prediction = self.fc(classifier_prediction)
-            classifier_prediction = self.softmax(classifier_prediction)
+        _, (classifier_prediction, _) = self.lstm_classifier(pitch_prediction)
+        classifier_prediction = classifier_prediction.transpose(0, 1).flatten(
+            start_dim=1
+        )
+        classifier_prediction = self.fc(classifier_prediction)
 
         return classifier_prediction
 
