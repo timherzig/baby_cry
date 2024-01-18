@@ -1,6 +1,5 @@
 data:
   root_dir: "/netscratch/herzig/datasets/BabyCry_no_augment"
-  version: 1
   data_type: "mel-spectogram"
   augmentation: False
 
@@ -11,10 +10,11 @@ model:
   seq_len: 192
   bilstm:
     hidden_size: 128
-    num_layers: 8
-    dropout: 0.5
+    num_layers: 2
+    dropout: 0.0
 
 batch_size: 8
 num_workers: 8
 num_epochs: 20
 lr: 0.0001
+dropout: 0.0

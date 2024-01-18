@@ -14,6 +14,7 @@ from omegaconf import OmegaConf
 from sklearn.metrics import f1_score, accuracy_score
 from src.data.data import get_dataloaders
 from src.models.model import get_model
+from src.utils.temperature_scaling import ModelWithTemperature
 
 
 def train(config, config_name):
@@ -37,9 +38,7 @@ def train(config, config_name):
     optimizer = optim.Adam(Net.parameters(), lr=config.lr)
     scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.95)
 
-    print(
-        f"Training data: {config.data.root_dir} ver. {config.data.version}, data type {config.data.data_type}."
-    )
+    print(f"Training data: {config.data.root_dir}, data type {config.data.data_type}.")
 
     num_epochs = config.num_epochs
     train_loss_per_epoch = torch.zeros(num_epochs)
@@ -54,7 +53,7 @@ def train(config, config_name):
     time_name = time_name.replace(" ", "_")
     time_name = time_name.replace(":", "_")
 
-    path = f"./trained_models/{config.data.root_dir.split('/')[-1].split('.')[0]}_{config.data.version}/{config.model.architecture}/{config_name}"
+    path = f"./trained_models/{config.data.root_dir.split('/')[-1].split('.')[0]}/{config.model.architecture}/{config_name}"
 
     if os.path.exists(path):
         shutil.rmtree(path, ignore_errors=True)
@@ -134,10 +133,6 @@ def train(config, config_name):
             loss = F.cross_entropy(output, labels.long(), weight=split)
 
             output = F.softmax(output, dim=1)
-            # for i in range(len(random_idx)):
-            #     print(
-            #         f"Output: {output[random_idx[i]].cpu().detach().numpy()}, Label: {labels[random_idx[i]].cpu().detach().numpy()}"
-            #     )
 
             o = (output > 0.5).float()
             o = o.clone().cpu().detach().numpy()
@@ -187,8 +182,10 @@ def train(config, config_name):
     params = torch.load(best_model_save_path, map_location="cpu")
     Net.load_state_dict(params["model_state_dict"])
     Net.eval()
+    Net = ModelWithTemperature(Net)
+    Net.set_temperature(val_loader)
+    Net.eval()
 
-    total_test_loss = 0
     total_f1_counter = 0
     total_acc_counter = 0
     for batch in tqdm(test_loader):
