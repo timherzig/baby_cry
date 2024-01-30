@@ -1,0 +1,20 @@
+data:
+  root_dir: "/netscratch/herzig/datasets/BabyCry_no_augment"
+  data_type: "mel-spectogram"
+  augmentation: False
+
+model:
+  architecture: "jdc"
+  pretrained: "src/models/jdc/bst.t7"
+  num_classes: 1
+  seq_len: 192
+  bilstm:
+    hidden_size: 64
+    num_layers: 2
+    dropout: 0.5
+
+batch_size: 16
+num_workers: 8
+num_epochs: 5
+lr: 0.0001
+dropout: 0.2
